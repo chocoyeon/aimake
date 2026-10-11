@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 문장 생성 작동원리 한눈에 보기</title>
+    <!-- Tailwind CSS 탑재 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 구글 폰트(Noto Sans KR & Inter) 탑재 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome 아이콘 탑재 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans KR', 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* 맥북/메모장 느낌의 음영 디테일 */
+        .document-shadow {
+            box-shadow: 0 4px 20px -2px rgba(50, 50, 93, 0.1), 0 2px 10px -1px rgba(0, 0, 0, 0.05);
+        }
+        /* 펄스 애니메이션 */
+        .pulse-active {
+            animation: ring-pulse 2s infinite ease-in-out;
+        }
+        @keyframes ring-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            50% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen py-6 px-4 md:px-8 flex flex-col justify-between">
+
+    <!-- 메인 컨테이너 (1280px 고정비율 느낌을 유지하되 유연한 반응형 설계) -->
+    <div class="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl border border-slate-100 p-6 md:p-8 flex flex-col justify-between gap-6">
+        
+        <!-- 타이틀 헤더 영역 (이미지 2026_09_16_54 참고) -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-4">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600 text-2xl shadow-inner">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                        AI는 어떻게 문장을 만들까요?
+                        <span class="text-xs bg-indigo-100 text-indigo-800 py-1 px-3 rounded-full font-bold">LLM 작동 메커니즘</span>
+                    </h1>
+                    <p class="text-slate-500 text-sm mt-1">
+                        AI는 인간처럼 '생각'하는 것이 아닙니다. <span class="text-blue-600 font-bold">다음에 올 단어들을 수학적 확률로 계산하여 한 조각씩 예측</span>하며 문장을 완성합니다.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 실시간 시뮬레이터 제어 버튼 -->
+            <div class="mt-4 md:mt-0 flex gap-2 w-full md:w-auto">
+                <button id="btn-auto" class="flex-1 md:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-play"></i> 자동 예측 재생
+                </button>
+                <button id="btn-reset" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-rotate-left"></i> 처음부터
+                </button>
+            </div>
+        </div>
+
+        <!-- 3열 분할 메인 대시보드 레이아웃 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            
+            <!-- [1열] 입력부 - 프롬프트 & 맥락 정보 (ChatGPT Image 2026년 6월 27일 오후 09_16_54.png 참고) -->
+            <div class="lg:col-span-3 flex flex-col gap-4 bg-slate-50 border border-slate-200 p-5 rounded-2xl">
+                <div>
+                    <span class="inline-flex items-center gap-1 text-xs font-bold bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full mb-2">
+                        <i class="fa-solid fa-circle-1 text-blue-600"></i> 입력 프롬프트 (요청)
+                    </span>
+                    <div class="bg-white border border-slate-200 p-3.5 rounded-xl flex items-start gap-3">
+                        <div class="w-9 h-9 rounded-full bg-emerald-100 flex-shrink-0 flex items-center justify-center text-emerald-700 font-bold text-xs">
+                            <i class="fa-solid fa-graduation-cap"></i>
+                        </div>
+                        <p class="text-xs text-slate-700 leading-relaxed font-medium">
+                            <strong>"고등학교 국어 교사입니다.</strong> 다음 학생의 활동을 바탕으로 <span class="text-blue-600 font-bold">세부능력 및 특기사항</span>을 작성해 주세요."
+                        </p>
+                    </div>
+                </div>
+
+                <div>
+                    <span class="inline-flex items-center gap-1 text-xs font-bold bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full mb-2">
+                        <i class="fa-solid fa-circle-2 text-blue-600"></i> 맥락 정보 (학생 활동 기록)
+                    </span>
+                    <div class="bg-white border border-slate-200 p-3.5 rounded-xl space-y-2 text-[11px] leading-relaxed text-slate-600 font-medium">
+                        <div class="flex items-start gap-1.5">
+                            <span class="text-blue-500 mt-0.5">•</span>
+                            <p>문학 작품을 다각도로 분석하여 발표함</p>
+                        </div>
+                        <div class="flex items-start gap-1.5">
+                            <span class="text-blue-500 mt-0.5">•</span>
+                            <p>자신의 의견을 근거를 들어 논리적으로 설명함</p>
+                        </div>
+                        <div class="flex items-start gap-1.5">
+                            <span class="text-blue-500 mt-0.5">•</span>
+                            <p>친구들의 질문에 성실하게 답하고 토론을 이끔</p>
+                        </div>
+                        <div class="flex items-start gap-1.5">
+                            <span class="text-blue-500 mt-0.5">•</span>
+                            <p>독서 습관이 뛰어나고 글쓰기 능력이 우수함</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 좋은 프롬프트 핵심 가이드 상시 노출 -->
+                <div class="mt-auto pt-3 border-t border-slate-200">
+                    <div class="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                        <p class="text-[11px] text-amber-800 leading-relaxed">
+                            <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i>
+                            <strong>핵심 가이드:</strong> 조건(역할, 활동 맥락, 제한 자수)이 구체적일수록 AI는 더욱 정확하고 가치 있는 다음 토큰을 예측해 냅니다.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [2열] AI 엔진부 - 토큰 분절 및 실시간 예측 연산 (ChatGPT Image 2026년 6월 27일 오후 09_16_57.png 참고) -->
+            <div class="lg:col-span-6 flex flex-col gap-4 border border-slate-200 p-5 rounded-2xl relative overflow-hidden">
+                
+                <!-- 상단 토큰 슬라이스 시각화 -->
+                <div>
+                    <span class="inline-flex items-center gap-1.5 text-xs font-bold bg-blue-50 text-blue-800 px-3 py-1.5 rounded-full mb-3">
+                        <i class="fa-solid fa-scissors"></i> 단계 1. 입력 문장의 조각(토큰) 분절 시각화
+                    </span>
+                    <div class="flex flex-wrap gap-1.5 bg-slate-50 border border-slate-200/60 p-3 rounded-xl" id="token-slice-container">
+                        <!-- 토큰 칩 조각들이 들어감 -->
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">고등학교</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">국어</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">교사</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">학생</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">활동</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">내용을</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">바탕으로</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">세부능력</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">및</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">특기사항을</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">작성해</span>
+                        <span class="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold px-2 py-1 rounded">주세요</span>
+                    </div>
+                </div>
+
+                <!-- 실시간 예측 단어 시뮬레이션 인터랙티브 패널 -->
+                <div class="flex-grow flex flex-col justify-between bg-slate-50 border border-slate-150 p-4 rounded-xl min-h-[300px]">
+                    <div>
+                        <div class="flex justify-between items-center mb-2.5">
+                            <span class="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                <i class="fa-solid fa-network-wired text-blue-500"></i> 단계 2. 실시간 문맥 기반 다음 단어 확률 예측
+                            </span>
+                            <span id="step-indicator" class="text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">6단계 진행 중</span>
+                        </div>
+                        
+                        <!-- 누적 문장 윈도우 -->
+                        <div class="bg-slate-900 text-slate-100 p-3.5 rounded-xl text-xs font-semibold leading-relaxed mb-4 min-h-[60px] flex items-center flex-wrap gap-1.5" id="context-sentence">
+                            <!-- 단어가 추가되는 실시간 상태값 -->
+                        </div>
+                    </div>
+
+                    <!-- 예측 단어 후보 순위 목록 (실제 이미지 형태 완벽 고안) -->
+                    <div class="space-y-2" id="candidates-container">
+                        <!-- 자바스크립트로 동적 렌더링 예정 -->
+                    </div>
+
+                    <!-- 예측 매커니즘 설명 하단 배너 -->
+                    <div class="mt-3 text-center bg-white/80 border border-slate-200 p-2 rounded-lg" id="engine-explanation">
+                        <p class="text-[11px] text-slate-500 font-medium">
+                            <i class="fa-solid fa-microchip text-indigo-500 mr-1 animate-pulse"></i>
+                            이전 단어들의 관계를 계산하여 <strong class="text-slate-700">확률이 가장 높은 단어</strong>를 한 글자씩 선택합니다.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [3열] 결과 및 요약부 - 메모패드 형태의 완성 답안 및 학습 요약 (ChatGPT Image 2026년 6월 27일 오후 09_16_50.png 참고) -->
+            <div class="lg:col-span-3 flex flex-col gap-4">
+                
+                <!-- 실제 세특 기재 완성본 가상 모니터 (메모 형태 디자인) -->
+                <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 flex-grow flex flex-col justify-between document-shadow relative min-h-[280px]">
+                    <div class="absolute -top-3 right-4 bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold py-0.5 px-2.5 rounded-full shadow-sm">
+                        AI 완성 답변 예시
+                    </div>
+                    <div>
+                        <div class="border-b pb-2 mb-3">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest"><i class="fa-regular fa-clipboard"></i> Student Record Output</h4>
+                            <p class="text-sm font-bold text-slate-800 mt-1">세부능력 및 특기사항 예시</p>
+                        </div>
+                        
+                        <!-- 누적되면서 완성되는 가상 서류 본문 -->
+                        <div class="text-xs leading-relaxed text-slate-700 font-medium min-h-[140px]" id="final-document-content">
+                            <!-- 실시간으로 글자가 입력되는 효과 -->
+                        </div>
+                    </div>
+                    
+                    <div class="border-t pt-2 mt-2 flex justify-between items-center text-[10px] text-slate-400">
+                        <span>생성 결과: <b class="text-blue-600" id="current-char-count">0</b>자</span>
+                        <span class="font-mono">Status: <span class="text-emerald-500" id="status-badge">대기 중</span></span>
+                    </div>
+                </div>
+
+                <!-- 핵심 요약 가이드 박스 -->
+                <div class="bg-indigo-900 text-white p-4 rounded-2xl shadow-md space-y-2.5">
+                    <h4 class="text-xs font-bold tracking-wider text-indigo-200 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-check text-emerald-400"></i> AI 교육 리터러시 요약
+                    </h4>
+                    <ul class="text-[11px] space-y-1.5 text-indigo-100 font-medium leading-relaxed">
+                        <li>• <strong class="text-white">평균 수렴:</strong> AI는 웹 데이터를 통해 가장 표준적이고 뻔한 답변을 완성하는 통계 기계입니다.</li>
+                        <li>• <strong class="text-white">교사의 필요성:</strong> 따라서 AI가 추천한 초안에, 학생의 고유한 교과 활동을 덧입히는 최종 검토는 오직 교사의 몫입니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- [하단 영역] 좋은 프롬프트 조립 규칙 가이드 (ChatGPT Image 2026년 6월 27일 오후 09_16_54.png & 57.png 참고) -->
+        <div class="bg-blue-50 border border-blue-200/70 rounded-2xl p-4">
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-sm shadow">
+                        <i class="fa-solid fa-bullhorn animate-bounce"></i>
+                    </span>
+                    <div>
+                        <h3 class="text-sm font-bold text-blue-900">좋은 프롬프트(질문)를 작성하는 5대 공식</h3>
+                        <p class="text-[11px] text-blue-700/80">이 요소를 갖추어 질문할 때, AI는 실시간 단어 조합에서 최고의 우수 세특 토큰을 매칭시킵니다.</p>
+                    </div>
+                </div>
+                
+                <!-- 5대 요소 카드 리스트 -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full md:w-auto">
+                    <div class="bg-white border border-blue-150 p-2 rounded-xl text-center shadow-sm">
+                        <span class="block text-[10px] font-bold text-blue-800">1. 역할(Role)</span>
+                        <span class="text-[9px] text-slate-500">예: 국어 교사</span>
+                    </div>
+                    <div class="bg-white border border-blue-150 p-2 rounded-xl text-center shadow-sm">
+                        <span class="block text-[10px] font-bold text-blue-800">2. 목표(Task)</span>
+                        <span class="text-[9px] text-slate-500">예: 세특 작성</span>
+                    </div>
+                    <div class="bg-white border border-blue-150 p-2 rounded-xl text-center shadow-sm">
+                        <span class="block text-[10px] font-bold text-blue-800">3. 맥락(Context)</span>
+                        <span class="text-[9px] text-slate-500">예: 학생활동내용</span>
+                    </div>
+                    <div class="bg-white border border-blue-150 p-2 rounded-xl text-center shadow-sm">
+                        <span class="block text-[10px] font-bold text-blue-800">4. 조건(Condition)</span>
+                        <span class="text-[9px] text-slate-500">예: 500자 이내</span>
+                    </div>
+                    <div class="bg-white border border-blue-150 p-2 rounded-xl text-center shadow-sm">
+                        <span class="block text-[10px] font-bold text-blue-800">5. 형식(Output)</span>
+                        <span class="text-[9px] text-slate-500">예: 줄글 단락</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 푸터 바 정보 -->
+    <div class="text-center text-[11px] text-slate-400 mt-4">
+        <span>* 참고 이미지: ChatGPT Image 2026년 6월 27일 오후 09_16_54 / 57 / 50 자료 연계 및 인터랙티브 포맷 구현</span>
+    </div>
+
+    <!-- 자바스크립트 엔진 및 제어 스크립트 -->
+    <script>
+        // 시뮬레이터 원시 추적 데이터셋 (이미지 2026_09_16_50/57 참고)
+        const sequenceSteps = [
+            {
+                step: 1,
+                addedWord: "학생은 ",
+                currentSentence: "학생은",
+                candidates: [
+                    { word: "발표에서", prob: 78, isSelected: true, rating: 5 },
+                    { word: "수업에서", prob: 12, isSelected: false, rating: 1 },
+                    { word: "책을", prob: 5, isSelected: false, rating: 1 }
+                ],
+                explanation: "교사가 입력한 활동 내용('발표함') 맥락을 파악하고 첫 어절 후보로 '발표에서'를 예측해 붙였습니다."
+            },
+            {
+                step: 2,
+                addedWord: "발표 활동에서 ",
+                currentSentence: "학생은 발표 활동에서",
+                candidates: [
+                    { word: "논리적으로", prob: 72, isSelected: true, rating: 5 },
+                    { word: "적극적으로", prob: 18, isSelected: false, rating: 1 },
+                    { word: "성실하게", prob: 6, isSelected: false, rating: 1 }
+                ],
+                explanation: "'발표 활동에서' 다음에 어떤 부사가 가장 어울릴지 학습된 문단 결합 확률을 토대로 순위를 계산합니다."
+            },
+            {
+                step: 3,
+                addedWord: "논리적으로 ",
+                currentSentence: "학생은 발표 활동에서 논리적으로",
+                candidates: [
+                    { word: "자신의", prob: 81, isSelected: true, rating: 5 },
+                    { word: "다양한", prob: 10, isSelected: false, rating: 1 },
+                    { word: "친구들의", prob: 4, isSelected: false, rating: 1 }
+                ],
+                explanation: "'자신의'의 연결 점수가 81%로 가장 우세합니다. 확률이 높은 단어를 낚아채서 문맥을 견고히 다집니다."
+            },
+            {
+                step: 4,
+                addedWord: "자신의 ",
+                currentSentence: "학생은 발표 활동에서 논리적으로 자신의",
+                candidates: [
+                    { word: "의견을", prob: 83, isSelected: true, rating: 5 },
+                    { word: "생각을", prob: 9, isSelected: false, rating: 1 },
+                    { word: "주장을", prob: 5, isSelected: false, rating: 1 }
+                ],
+                explanation: "앞문장('자신의')에 호응하는 명사 목적어를 골라냅니다. '의견을'이 83%로 다른 후보를 제치고 매칭되었습니다."
+            },
+            {
+                step: 5,
+                addedWord: "의견을 ",
+                currentSentence: "학생은 발표 활동에서 논리적으로 자신의 의견을",
+                candidates: [
+                    { word: "근거를", prob: 76, isSelected: true, rating: 5 },
+                    { word: "바탕으로", prob: 15, isSelected: false, rating: 1 },
+                    { word: "통해", prob: 6, isSelected: false, rating: 1 }
+                ],
+                explanation: "교사가 입력한 재료('자신의 의견을 근거를 들어 논리적으로 설명함')에 수렴하도록 고품질 연결을 생성합니다."
+            },
+            {
+                step: 6,
+                addedWord: "근거를 ",
+                currentSentence: "학생은 발표 활동에서 논리적으로 자신의 의견을 근거를",
+                candidates: [
+                    { word: "들어 ", prob: 82, isSelected: true, rating: 5 },
+                    { word: "제시하여", prob: 9, isSelected: false, rating: 1 },
+                    { word: "활용하여", prob: 5, isSelected: false, rating: 1 }
+                ],
+                explanation: "'근거를' 뒤에 매칭 확률이 가장 자연스러운 서술형 조각 '들어'를 순차적으로 계산해 붙였습니다."
+            },
+            {
+                step: 7,
+                addedWord: "들어 설명하였고, ",
+                currentSentence: "학생은 발표 활동에서 논리적으로 자신의 의견을 근거를 들어 설명하였고,",
+                candidates: [
+                    { word: "친구들의", prob: 84, isSelected: true, rating: 5 },
+                    { word: "다양한", prob: 8, isSelected: false, rating: 1 },
+                    { word: "또한", prob: 5, isSelected: false, rating: 1 }
+                ],
+                explanation: "이전 문단이 종결형을 타지 않고 '친구들의' 활동 맥락으로 바로 부드럽게 이어질 수 있도록 확률 유리를 구축합니다."
+            },
+            {
+                step: 8,
+                addedWord: "친구들의 질문에 성실하게 답하며 토론을 이끌어가는 태도가 인상적이며, 뛰어난 독서 능력을 바탕으로 깊이 있는 글쓰기를 보여줌.",
+                currentSentence: "학생은 발표 활동에서 논리적으로 자신의 의견을 근거를 들어 설명하였고, 친구들의 질문에 성실하게 답하며 토론을 이끌어가는 태도가 인상적이며, 뛰어난 독서 능력을 바탕으로 깊이 있는 글쓰기를 보여줌.",
+                candidates: [
+                    { word: "[문장 완성 종결 기호]", prob: 100, isSelected: true, rating: 5 }
+                ],
+                explanation: "모든 맥락 재료가 조립되었으므로, AI 예측 엔진은 마지막 종결형 조각을 부착하며 100% 종결에 이릅니다."
+            }
+        ];
+
+        let currentStepIndex = 0;
+        let isAutoPlaying = false;
+        let playInterval = null;
+
+        // UI 요소 캐싱
+        const btnAuto = document.getElementById("btn-auto");
+        const btnReset = document.getElementById("btn-reset");
+        const contextSentenceEl = document.getElementById("context-sentence");
+        const candidatesContainerEl = document.getElementById("candidates-container");
+        const engineExplanationEl = document.getElementById("engine-explanation");
+        const finalDocumentContentEl = document.getElementById("final-document-content");
+        const currentCharCountEl = document.getElementById("current-char-count");
+        const statusBadgeEl = document.getElementById("status-badge");
+        const stepIndicatorEl = document.getElementById("step-indicator");
+
+        // UI 갱신 렌더 함수
+        function updateUI() {
+            if (currentStepIndex >= sequenceSteps.length) {
+                // 문장 완성 상태
+                statusBadgeEl.innerText = "조립 완료";
+                statusBadgeEl.className = "text-emerald-500 font-bold animate-pulse";
+                stepIndicatorEl.innerText = "최종 완료";
+                btnAuto.disabled = true;
+                btnAuto.classList.add("opacity-50", "cursor-not-allowed");
+                return;
+            }
+
+            const stepData = sequenceSteps[currentStepIndex];
+
+            // 1. 진행단계 뱃지 업데이트
+            stepIndicatorEl.innerText = `${stepData.step} / ${sequenceSteps.length} 단계`;
+            statusBadgeEl.innerText = isAutoPlaying ? "자동 연산 중..." : "사용자 승인 대기";
+            statusBadgeEl.className = isAutoPlaying ? "text-blue-500 font-bold" : "text-amber-500 font-bold";
+
+            // 2. 엔진 맥락 윈도우 채우기
+            contextSentenceEl.innerHTML = "";
+            // 이전까지 완성된 문구
+            let accumulated = "";
+            for (let i = 0; i <= currentStepIndex; i++) {
+                accumulated += sequenceSteps[i].addedWord;
+            }
+            
+            // 시각적 토큰 효과 주기
+            const parts = accumulated.trim().split(" ");
+            parts.forEach((p, idx) => {
+                const isLast = idx === parts.length - 1;
+                const tokenSpan = document.createElement("span");
+                tokenSpan.className = isLast 
+                    ? "bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold scale-105 transition-transform" 
+                    : "bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-xs";
+                tokenSpan.innerText = p;
+                contextSentenceEl.appendChild(tokenSpan);
+            });
+            
+            // 예측중 플레이스홀더 추가
+            if (currentStepIndex < sequenceSteps.length - 1) {
+                const loadingSpan = document.createElement("span");
+                loadingSpan.className = "text-blue-400 font-mono text-xs animate-pulse ml-1";
+                loadingSpan.innerText = "[예측 토큰 계산중...]";
+                contextSentenceEl.appendChild(loadingSpan);
+            }
+
+            // 3. 우측 최종 모니터 갱신
+            finalDocumentContentEl.innerHTML = `
+                <p class="text-slate-800 font-semibold leading-relaxed">
+                    ${accumulated}
+                    <span class="inline-block w-1.5 h-3 bg-blue-500 ml-0.5 animate-ping"></span>
+                </p>
+            `;
+            currentCharCountEl.innerText = accumulated.length;
+
+            // 4. 후보군 리스트 렌더링 (실제 Image 2026_09_16_57 디자인 반영)
+            candidatesContainerEl.innerHTML = "";
+            stepData.candidates.forEach(cand => {
+                const candRow = document.createElement("div");
+                // 선택된 행은 하이라이팅 효과
+                candRow.className = `flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all ${
+                    cand.isSelected 
+                        ? "bg-blue-50 border-blue-300 shadow-sm ring-1 ring-blue-200" 
+                        : "bg-white border-slate-200 hover:bg-slate-50"
+                }`;
+
+                // 가상 스타 레이팅 생성
+                let starsHTML = "";
+                for (let s = 1; s <= 5; s++) {
+                    if (s <= (cand.prob >= 70 ? 5 : cand.prob >= 15 ? 3 : 1)) {
+                        starsHTML += `<i class="fa-solid fa-star text-amber-400 text-[10px]"></i>`;
+                    } else {
+                        starsHTML += `<i class="fa-regular fa-star text-slate-200 text-[10px]"></i>`;
+                    }
+                }
+
+                candRow.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-5 h-5 rounded-full ${cand.isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'} text-[10px] font-bold flex items-center justify-center">
+                            ${cand.isSelected ? '<i class="fa-solid fa-check text-[9px]"></i>' : '•'}
+                        </span>
+                        <div>
+                            <span class="text-xs font-bold text-slate-800">${cand.word}</span>
+                            <div class="flex gap-0.5 mt-0.5">${starsHTML}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 확률 프로그레스바 및 수치값 -->
+                    <div class="flex items-center gap-3 w-full sm:w-1/2 mt-2 sm:mt-0">
+                        <div class="flex-grow bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div class="h-full rounded-full ${cand.isSelected ? 'bg-blue-500' : 'bg-slate-400'}" style="width: ${cand.prob}%"></div>
+                        </div>
+                        <span class="text-xs font-bold ${cand.isSelected ? 'text-blue-600' : 'text-slate-500'} w-10 text-right">
+                            ${cand.prob}%
+                        </span>
+                    </div>
+                `;
+
+                // 인터랙티브 조작: 후보군을 직접 누르면 수동 예측 진행 가능
+                if (!isAutoPlaying) {
+                    candRow.onclick = () => {
+                        proceedNextStep();
+                    };
+                    candRow.style.cursor = "pointer";
+                }
+
+                candidatesContainerEl.appendChild(candRow);
+            });
+
+            // 5. 엔진 동작 상태 가이드 설명문구 갱신
+            engineExplanationEl.innerHTML = `
+                <p class="text-[11px] text-slate-600 font-medium">
+                    <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i>
+                    ${stepData.explanation}
+                </p>
+            `;
+        }
+
+        function proceedNextStep() {
+            if (currentStepIndex < sequenceSteps.length - 1) {
+                currentStepIndex++;
+                updateUI();
+            } else {
+                currentStepIndex++; // 최종 완성 상태로 전이
+                updateUI();
+                stopAutoPlay();
+            }
+        }
+
+        function startAutoPlay() {
+            if (currentStepIndex >= sequenceSteps.length) {
+                resetSimulation();
+            }
+            isAutoPlaying = true;
+            btnAuto.innerHTML = `<i class="fa-solid fa-pause"></i> 자동 일시정지`;
+            btnAuto.className = "flex-1 md:flex-initial bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm";
+            
+            playInterval = setInterval(() => {
+                proceedNextStep();
+            }, 2500); // 2.5초 간격 순차 갱신
+            updateUI();
+        }
+
+        function stopAutoPlay() {
+            isAutoPlaying = false;
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+            btnAuto.innerHTML = `<i class="fa-solid fa-play"></i> 자동 예측 재생`;
+            btnAuto.className = "flex-1 md:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm";
+            updateUI();
+        }
+
+        function resetSimulation() {
+            stopAutoPlay();
+            currentStepIndex = 0;
+            btnAuto.disabled = false;
+            btnAuto.classList.remove("opacity-50", "cursor-not-allowed");
+            updateUI();
+        }
+
+        // 이벤트 바인딩
+        btnAuto.onclick = () => {
+            if (isAutoPlaying) {
+                stopAutoPlay();
+            } else {
+                startAutoPlay();
+            }
+        };
+
+        btnReset.onclick = () => {
+            resetSimulation();
+        };
+
+        // 초기 시작
+        window.onload = () => {
+            resetSimulation();
+        };
+    </script>
+</body>
+</html>
